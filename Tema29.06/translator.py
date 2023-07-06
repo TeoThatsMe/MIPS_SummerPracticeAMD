@@ -1,3 +1,5 @@
+import numpy as np
+
 def getRegVal(reg):
     valRet=0
     if "$t" in reg:
@@ -80,7 +82,19 @@ for linie in linii:
             instructiune+=(getRegVal(p2[0])<<11)
             instructiune+=(getRegVal(p2[1])<<21)
             instructiune+=(getRegVal(p2[2])<<16)
-        
+
+        case "beq":
+            instructiune+=4<<26
+            instructiune+=(getRegVal(p2[0])<<21)
+            instructiune+=(getRegVal(p2[1])<<16)
+            if int(p2[2])<0:
+                instructiune+=65536
+            instructiune+=int(p2[2])
+
+        case "j":
+            instructiune+=2<<26
+            instructiune+=np.uint8(int(p2[0]))
+
         case "jr":
             instructiune+=8
             instructiune+=(getRegVal(p2[0])<<21)
@@ -90,8 +104,10 @@ for linie in linii:
 
     #print(p2)
     if instructiune!=0:
-        print("{0:#010x}".format(instructiune))
+        print("{0:08x}".format(instructiune))
         output.write("{0:#010x}".format(instructiune) + "\n")
     else:
         print(linie)
         output.write(linie + "\n")
+
+
