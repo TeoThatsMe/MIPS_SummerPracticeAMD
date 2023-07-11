@@ -16,6 +16,32 @@ int nrLinii()
     return count;
 }
 
+int GIgel(int In0,int In1,int AluCtrl)
+{
+    switch (AluCtrl)
+    {
+    case 0b000:
+        return In0&In1;
+        break;
+    case 0b001:
+        return In0|In1;
+        break;
+    case 0b010:
+        return In0+In1;
+        break;
+    case 0b011:
+        return In0&In1;
+        break;
+    case 0b110:
+        return In0-In1;
+        break;
+    case 0b111:
+        return In0<In1;
+        break;
+    
+    }
+}
+
 
 int main()
 {
@@ -88,9 +114,9 @@ int main()
             read(p_PC_IM[0],readbuff,sizeof(readbuff));
 
 
-            //printf("###%d\n",atoi(readbuff));
+            printf("###%d\n",atoi(readbuff));
             sprintf(s,"%u",arr[atoi(readbuff)]);
-            sleep(2);
+            //sleep(2);
             write(p_IM_DEC[1],s,sizeof(s));
 
 
@@ -114,7 +140,7 @@ int main()
         {
 
             read(p_IM_DEC[0],readbuff,sizeof(readbuff));
-            //printf("!!!%x\n",atoi(readbuff));
+            printf("!!!%x\n",atoi(readbuff));
             //sleep(3);
             unsigned int instr=atoi(readbuff);
             unsigned long int semnale=0; 
@@ -130,28 +156,28 @@ int main()
                  addr=(instr&67108863);
                  */
             switch (opcode)
-            {//RegWrite,RegDst,AluSrc,Branch,MemWrite,MemToReg,2b AluOp,Jump,MemRead
+            {//2b Type,RegWrite,RegDst,AluSrc,Branch,MemWrite,MemToReg,2b AluOp,Jump,MemRead
                 case 0b000000: //R type
-                    semnale=0b1100001000;
+                    semnale=0b001100001000;
                     break;
                 
                 case 0b000010: //jmp
-                    semnale=0b10;
+                    semnale=0b100000000010;
                     break;
                 
                 case 0b000100: //beq
-                    semnale=0b0001000100;
+                    semnale=0b010001000100;
                     break;
                 
                 case 0b001000: //addi
-                    semnale=0b1010000000;
+                    semnale=0b011010000000;
                     break;
                 case 0b100011: //lw
-                    semnale=0b1010010001;
+                    semnale=0b011010010001;
                     break;
                 
                 case 0b101011: //sw
-                    semnale=0b0010100000;
+                    semnale=0b010010100000;
                     break;
             }
             AluOp=semnale&(0b11<<2);
@@ -194,16 +220,16 @@ int main()
             semnale<<=3;
             semnale+=AluCtrl;
             unsigned long int res=instr&67108863;
-            res<<=13;
+            res<<=15;
             semnale+=res;
-            //26b instr,RegWrite,RegDst,AluSrc,Branch,MemWrite,MemToReg,2b AluOp,Jump,MemRead,3b AluCtrl
+            //26b instr,2b Type,RegWrite,RegDst,AluSrc,Branch,MemWrite,MemToReg,2b AluOp,Jump,MemRead,3b AluCtrl
             sprintf(readbuff,"%lu",semnale);
+            printf("sent:%s\n",readbuff);
             write(p_DEC_EX[1],readbuff,strlen(readbuff)+1);
 
            
 
-            if(instr==0xac080001)
-                break;
+
                 
         }
         
@@ -211,38 +237,105 @@ int main()
     }
 
 
-        if(fork()==0)
+    
+    
+    
+    if(fork()==0)
     {
+        int regs[32],mem[32];
+        for(int i=0;i<32;++i)
+        {
+            regs[i]=0;
+            mem[i]=0;
+        }
+
         char readbuff[256];
 
         close(p_DEC_EX[1]);
+
         while(1)
         {
             read(p_DEC_EX[0],readbuff,sizeof(readbuff));
-            unsigned long int rcvd=atol(readbuff); //26b instr,RegWrite,RegDst,AluSrc,Branch,MemWrite,MemToReg,2b AluOp,Jump,MemRead,3b AluCtrl
+            unsigned long int rcvd=atol(readbuff); //26b instr,2b Type,RegWrite,RegDst,AluSrc,Branch,MemWrite,MemToReg,2b AluOp,Jump,MemRead,3b AluCtrl
             printf("received: %ld\n",rcvd);
             unsigned long int instr=67108863;
             
-            instr<<=13;
+            instr<<=15;
             instr&=rcvd;
-            instr>>=13;
+            instr>>=15;
             int funct=(instr&0b11111),
-                 rs=(instr&(0b11111<<21)),
-                 rt=(instr&(0b11111<<16)),
-                 rd=(instr&(0b11111<<11)),
-                 shamt=(instr&(0b11111<<6)),
+                 rs=(instr&(0b11111<<21))>>21,
+                 rt=(instr&(0b11111<<16))>>16,
+                 rd=(instr&(0b11111<<11))>>11,
+                 shamt=(instr&(0b11111<<6))>>6,
                  imm=(instr&65535),
                  AluCtrl=rcvd&0b111,
-                 MemRead=rcvd&(0b1<<3),
-                 Jump=rcvd&(0b1<<4),
-                 AluOp=rcvd&(0b11<<5),
-                 MemToReg=rcvd&(0b1<<7),
-                 MemWrite=rcvd&(0b1<<8),
-                 Branch=rcvd&(0b1<<9),
-                 AluSrc=rcvd&(0b1<<10),
-                 RegDst=rcvd&(0b1<<11),
-                 RegWrite=rcvd&(0b1<<12);
-            printf("!!%ld\n",instr);
+                 MemRead=rcvd&(0b1<<3)>>3,
+                 Jump=rcvd&(0b1<<4)>>4,
+                 AluOp=rcvd&(0b11<<5)>>5,
+                 MemToReg=rcvd&(0b1<<7)>>7,
+                 MemWrite=rcvd&(0b1<<8)>>8,
+                 Branch=rcvd&(0b1<<9)>>9,
+                 AluSrc=rcvd&(0b1<<10)>>10,
+                 RegDst=rcvd&(0b1<<11)>>11,
+                 RegWrite=rcvd&(0b1<<12)>>12,
+                 Type=(rcvd&(0b11<<13))>>13,
+                 instr16=instr&(65535);
+            
+            unsigned long int ret=0;
+            unsigned int rez=0;
+            printf("type=%d\n",rcvd&(0b11<<13));
+            int a=GIgel(regs[rs],regs[rt],AluCtrl);
+            if(Jump)
+            {
+                printf("jump\n");
+                ret+=instr;
+                ret<<=2;
+                ret+=0b01;
+            }
+            else if (Branch && (GIgel(regs[rs],regs[rt],AluCtrl))==0)
+            {
+                printf("branch\n");
+                ret+=instr16;
+                ret<<=18;
+                ret+=0b10;
+
+            }
+            else if(Type==0b00)
+            {
+                printf("R type\n");
+                if(!RegDst)
+                    rd=rt;
+                rez=GIgel(regs[rs],rt,AluCtrl);
+                if(RegWrite)
+                    regs[rd]=rez;
+            }
+            else if(Type==0b01)
+            {
+                printf("I type\n");
+                unsigned int MemOut=0,MuxMemOut=0;
+                if(!RegDst)
+                    rd=rt;
+                rez=GIgel(regs[rs],AluSrc==1?(instr16<<16):regs[rt],AluCtrl);
+
+                if(MemRead)
+                    MemOut=mem[rez];
+                
+                if(MemWrite)
+                    mem[rez]=regs[rt];
+                
+                if(MemToReg)
+                    MuxMemOut=MemOut;
+                else
+                    MuxMemOut=rez;
+                
+                if(RegWrite)
+                    regs[rd]=MuxMemOut;
+                
+                rez=MuxMemOut;
+
+            }
+            printf("!!%u\n",rez);
 
         }
         return 0;
@@ -250,6 +343,7 @@ int main()
     else
     {
 
+        wait(NULL);
         wait(NULL);
         wait(NULL);
         wait(NULL);
