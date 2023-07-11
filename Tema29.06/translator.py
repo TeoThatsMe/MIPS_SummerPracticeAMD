@@ -2,7 +2,13 @@ import numpy as np
 
 def getRegVal(reg):
     valRet=0
-    if "$t" in reg:
+    if "$a" in reg:
+        valRet+=4
+        valRet+=int(reg[2])
+    elif "$v" in reg:
+        valRet+=2
+        valRet+=int(reg[2])
+    elif "$t" in reg:
         valRet+=8
         valRet+=int(reg[2])
         if(int(reg[2])>7):

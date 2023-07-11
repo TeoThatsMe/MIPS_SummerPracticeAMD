@@ -4,12 +4,12 @@ module Registers(input RegWrite,
                  input [4:0] WriteRegister,
                  input [31:0] WriteData,
                  input clk,
-                 output reg [31:0] ReadData1,
-                 output reg [31:0] ReadData2);
+                 output [31:0] ReadData1,
+                 output [31:0] ReadData2);
   
   reg [31:0] regs[0:31];
   integer i;
-  integer t0,t1,t2,t3;
+  integer t0,t1,t2,t3,zeroo,test;
   initial
     begin
       for(i=0;i<32;i=i+1)
@@ -19,26 +19,28 @@ module Registers(input RegWrite,
     end
     
   
-  always @(ReadRegister1 or ReadRegister2)
-    begin
-      ReadData1=regs[ReadRegister1];
-      ReadData2=regs[ReadRegister2];
-    end
+  assign ReadData1=regs[ReadRegister1];
+  assign ReadData2=regs[ReadRegister2];
   
   always @(negedge clk)
     begin
+      test=WriteData;
       if(RegWrite==1'b1)
         begin
-          regs[WriteRegister]=WriteData;
-          ReadData1=regs[ReadRegister1];
-          ReadData2=regs[ReadRegister2];
+          
+          regs[WriteRegister]<=WriteData;
+          //ReadData2<=regs[ReadRegister2];
+		  //ReadData1<=regs[ReadRegister1];
+
         end
     end
   always @*
     begin
+      zeroo=regs[0];
       t0=regs[8];
       t1=regs[9];
       t2=regs[10];
       t3=regs[11];
     end
+
 endmodule

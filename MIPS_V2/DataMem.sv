@@ -1,6 +1,6 @@
 module DataMem(input [31:0] Addr,WriteData,
                input MemWrite,MemRead,clk,
-               output reg [31:0] ReadData);
+               output [31:0] ReadData);
   reg [31:0] mem [0:15];
   integer i,l0,l1,l2,l3,l4,l5,l6,l7,l8,l9;
   
@@ -12,11 +12,7 @@ module DataMem(input [31:0] Addr,WriteData,
         end
     end
   
-  always @(Addr, MemRead)
-    begin     
-      if(MemRead)
-        ReadData=mem[Addr];
-    end
+  assign ReadData= (MemRead==1)?mem[Addr]:ReadData;
   
   
   always @(negedge clk)

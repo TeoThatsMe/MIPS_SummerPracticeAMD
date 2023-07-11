@@ -1,4 +1,5 @@
-main: addi $t0,$0,16
+main: xor $t0,$t0,$t0
+addi $t0,$0,16
 sw $t0,0($0)
 addi $t0,$t0,16
 sw $t0,1($0)
@@ -20,4 +21,6 @@ loop_end:
 addi $t0,$0,100
 slt $t2,$t0,$t1
 and $t2,$t0,$t1
+sw $t2,0($0)
+lw $t0,0($0)
 j main
