@@ -1,5 +1,5 @@
 $date
-	Tue Jul 11 12:07:49 2023
+	Wed Jul 12 20:59:36 2023
 $end
 $version
 	Icarus Verilog
@@ -50,7 +50,7 @@ $scope module re $end
 $var wire 1 0 clk $end
 $var wire 32 C di [31:0] $end
 $var wire 1 D pl $end
-$var reg 32 E out [31:0] $end
+$var reg 32 E PCout [31:0] $end
 $upscope $end
 $scope module adder4 $end
 $var wire 32 F I0 [31:0] $end
