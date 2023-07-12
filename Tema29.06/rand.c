@@ -3,11 +3,12 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <string.h>   
+#include <string.h>
+#include <sys/mman.h>   
 
-int nrLinii()
+int nrLinii(char a[])
 {
-    FILE *instructiuni=fopen("iesire.hex","r");
+    FILE *instructiuni=fopen(a,"r");
     char c;
     int count=0;
     for (c = getc(instructiuni); c != EOF; c = getc(instructiuni))
@@ -16,7 +17,7 @@ int nrLinii()
     return count;
 }
 
-int GIgel(int In0,int In1,int AluCtrl)
+int ALU(int In0,int In1,int AluCtrl)
 {
     switch (AluCtrl)
     {
@@ -30,7 +31,7 @@ int GIgel(int In0,int In1,int AluCtrl)
         return In0+In1;
         break;
     case 0b011:
-        return In0&In1;
+        return In0^In1;
         break;
     case 0b110:
         return In0-In1;
@@ -42,10 +43,19 @@ int GIgel(int In0,int In1,int AluCtrl)
     }
 }
 
-
 int main()
 {
-    int p_PC_IM[2],p_IM_DEC[2],p_DEC_EX[2];
+    int p_PC_IM[2],p_IM_DEC[2],p_DEC_EX[2],p_EX_PC[2];
+    int p_clk[4][2];
+
+    if(pipe(p_clk[0])<0)
+        return EXIT_FAILURE;
+    if(pipe(p_clk[1])<0)
+        return EXIT_FAILURE;
+    if(pipe(p_clk[2])<0)
+        return EXIT_FAILURE;
+    if(pipe(p_clk[3])<0)
+        return EXIT_FAILURE;
 
     if(pipe(p_PC_IM)<0)
         return EXIT_FAILURE;
@@ -56,27 +66,42 @@ int main()
     if(pipe(p_DEC_EX)<0)
         return EXIT_FAILURE;
     
+    if(pipe(p_EX_PC)<0)
+        return EXIT_FAILURE;
+    
 
 
     if(fork()==0)
     {
         char s[256];
         int count=0;
+        int clk=0;
         close(p_PC_IM[0]);
-        while(1)
+
+        while(read(p_clk[0][0],&clk,sizeof(int)))
         {
-
-
             sprintf(s,"%d",count);
-            //printf("@@@%s\n",s);
+            printf("\tPC=%d\n\n",count);
 
             write(p_PC_IM[1],s,sizeof(s));
-            sleep(2);
+            //sleep(2);
             count++;
-            if(count==5)
+            unsigned long int citit=0;
+            read(p_EX_PC[0],&citit,sizeof(unsigned long int));
+            printf("citit=%lu\n",citit);
+            if((citit&0b11)==0b01)
             {
-                //printf("COunt==5 out");
-                break;
+                citit-=1;
+                citit+=(count&(0b1111<<28));
+                citit>>=2;
+                count=citit;
+
+            }
+            else if((citit&0b11)==0b10)
+            {
+                citit>>=18;
+                short int offset=((citit&(1<<15))>>15==1) ? citit | (65535<<16) : citit;
+                count+=offset;
             }
         }
 
@@ -88,18 +113,22 @@ int main()
     if(fork()==0)
     {
         char s[256];
-
+        int clk=0;
         close(p_PC_IM[1]);
         close(p_IM_DEC[0]);
 
         char readbuff[256];
         char * stop;
 
-        int nrInstr=nrLinii();
+        int nrInstr=nrLinii("iesire.hex");
+        int nrInstr1=nrLinii("test_prelucrat.asm");
         nrInstr+=1;
+        nrInstr1+=1;
         u_int32_t *arr=(u_int32_t *)malloc(nrInstr*sizeof(u_int32_t));
+        char **arr1=(char **)malloc(nrInstr1*sizeof(char *));
 
         FILE *instructiuni=fopen("iesire.hex","r");
+        FILE *instructiuni1=fopen("test_prelucrat.asm","r");
 
         for(int i=0;i<nrInstr;++i)
         {
@@ -108,22 +137,25 @@ int main()
                 readbuff[strlen(readbuff)-1]='\0';
             arr[i]=strtoul(readbuff,&stop,16);
         }
+        for(int i=0;i<nrInstr1;++i)
+        {
+            arr1[i]=(char *)malloc(100 * sizeof(char));
+            fgets(readbuff,255,instructiuni1);
+            if(i!=nrInstr1-1)
+                readbuff[strlen(readbuff)-1]='\0';
+            strcpy(arr1[i],readbuff);
+        }
 
-        while(1)
+        while(read(p_clk[1][0],&clk,sizeof(int)))
         {
             read(p_PC_IM[0],readbuff,sizeof(readbuff));
 
 
-            printf("###%d\n",atoi(readbuff));
+
             sprintf(s,"%u",arr[atoi(readbuff)]);
             //sleep(2);
+            printf("\tInstructiunea %x %s\n\n",arr[atoi(readbuff)],arr1[atoi(readbuff)]);
             write(p_IM_DEC[1],s,sizeof(s));
-
-
-
-            if(atoi(readbuff)==4)
-                break;
-            strcpy(readbuff,"");
         }
         return 0;
     }
@@ -133,18 +165,19 @@ int main()
     if(fork()==0)
     {
         char readbuff[256];
+        int clk=0;
 
         close(p_IM_DEC[1]);
         close(p_DEC_EX[0]);
-        while (1)
+        while (read(p_clk[2][0],&clk,sizeof(int)))
         {
 
             read(p_IM_DEC[0],readbuff,sizeof(readbuff));
-            printf("!!!%x\n",atoi(readbuff));
+            //printf("!!!%x\n",atoi(readbuff));
             //sleep(3);
             unsigned int instr=atoi(readbuff);
             unsigned long int semnale=0; 
-            unsigned int opcode=(instr&(0b111111<<26)),funct=(instr&0b11111);
+            unsigned int opcode=(instr&(0b111111<<26))>>26,funct=(instr&0b111111);
             unsigned int AluOp=0;
             /*
                  funct=(instr&0b11111),
@@ -180,7 +213,7 @@ int main()
                     semnale=0b010010100000;
                     break;
             }
-            AluOp=semnale&(0b11<<2);
+            AluOp=((semnale&(0b11<<2))>>2);
             unsigned int temp=funct+AluOp<<6;
             unsigned int AluCtrl=0;
             switch (AluOp)
@@ -192,8 +225,9 @@ int main()
             case 0b01:
                 AluCtrl=0b110;
                 break;
-            
+
             case 0b10:
+                    printf("funct=%d\n",funct);
                 switch (funct)
                 {
                 case 0b100000:
@@ -217,14 +251,16 @@ int main()
                 }
                 break;
             }
+            
             semnale<<=3;
             semnale+=AluCtrl;
             unsigned long int res=instr&67108863;
             res<<=15;
             semnale+=res;
             //26b instr,2b Type,RegWrite,RegDst,AluSrc,Branch,MemWrite,MemToReg,2b AluOp,Jump,MemRead,3b AluCtrl
+            printf("\t26b instr,2b Type,RegWrite,RegDst,AluSrc,Branch,MemWrite,MemToReg,2b AluOp,Jump,MemRead,3b AluCtrl\n");
+            printf("\tSemnale control concatenate %lx\n\n",semnale);
             sprintf(readbuff,"%lu",semnale);
-            printf("sent:%s\n",readbuff);
             write(p_DEC_EX[1],readbuff,strlen(readbuff)+1);
 
            
@@ -250,14 +286,14 @@ int main()
         }
 
         char readbuff[256];
+        int clk=0;
 
         close(p_DEC_EX[1]);
 
-        while(1)
+        while(read(p_clk[3][0],&clk,sizeof(int)))
         {
             read(p_DEC_EX[0],readbuff,sizeof(readbuff));
-            unsigned long int rcvd=atol(readbuff); //26b instr,2b Type,RegWrite,RegDst,AluSrc,Branch,MemWrite,MemToReg,2b AluOp,Jump,MemRead,3b AluCtrl
-            printf("received: %ld\n",rcvd);
+            unsigned long int rcvd=atol(readbuff); //26b instr,2b Type,RegWrite,RegDst,AluSrc,Branch,MemWrite,MemToReg,2b AluOp,Jump,MemRead,3b AluCtrl 011010000000010
             unsigned long int instr=67108863;
             
             instr<<=15;
@@ -270,32 +306,30 @@ int main()
                  shamt=(instr&(0b11111<<6))>>6,
                  imm=(instr&65535),
                  AluCtrl=rcvd&0b111,
-                 MemRead=rcvd&(0b1<<3)>>3,
-                 Jump=rcvd&(0b1<<4)>>4,
-                 AluOp=rcvd&(0b11<<5)>>5,
-                 MemToReg=rcvd&(0b1<<7)>>7,
-                 MemWrite=rcvd&(0b1<<8)>>8,
-                 Branch=rcvd&(0b1<<9)>>9,
-                 AluSrc=rcvd&(0b1<<10)>>10,
-                 RegDst=rcvd&(0b1<<11)>>11,
-                 RegWrite=rcvd&(0b1<<12)>>12,
+                 MemRead=(rcvd&(0b1<<3))>>3,
+                 Jump=(rcvd&(0b1<<4))>>4,
+                 AluOp=(rcvd&(0b11<<5))>>5,
+                 MemToReg=(rcvd&(0b1<<7))>>7,
+                 MemWrite=(rcvd&(0b1<<8))>>8,
+                 Branch=(rcvd&(0b1<<9))>>9,
+                 AluSrc=(rcvd&(0b1<<10))>>10,
+                 RegDst=(rcvd&(0b1<<11))>>11,
+                 RegWrite=(rcvd&(0b1<<12))>>12,
                  Type=(rcvd&(0b11<<13))>>13,
                  instr16=instr&(65535);
-            
+            //printf("%d",rcvd&0b111);
             unsigned long int ret=0;
             unsigned int rez=0;
-            printf("type=%d\n",rcvd&(0b11<<13));
-            int a=GIgel(regs[rs],regs[rt],AluCtrl);
             if(Jump)
             {
-                printf("jump\n");
+                printf("\tJump\n");
                 ret+=instr;
                 ret<<=2;
                 ret+=0b01;
             }
-            else if (Branch && (GIgel(regs[rs],regs[rt],AluCtrl))==0)
+            else if (Branch && (ALU(regs[rs],regs[rt],AluCtrl))==0)
             {
-                printf("branch\n");
+                printf("\tBranch\n");
                 ret+=instr16;
                 ret<<=18;
                 ret+=0b10;
@@ -303,20 +337,22 @@ int main()
             }
             else if(Type==0b00)
             {
-                printf("R type\n");
+                printf("\tR type\n");
                 if(!RegDst)
                     rd=rt;
-                rez=GIgel(regs[rs],rt,AluCtrl);
+                rez=ALU(regs[rs],regs[rt],AluCtrl);
+                printf("%d %d %d %d\n",regs[rs],regs[rt],RegWrite,AluCtrl);
                 if(RegWrite)
                     regs[rd]=rez;
             }
             else if(Type==0b01)
             {
-                printf("I type\n");
+                printf("\tI type\n");
                 unsigned int MemOut=0,MuxMemOut=0;
                 if(!RegDst)
                     rd=rt;
-                rez=GIgel(regs[rs],AluSrc==1?(instr16<<16):regs[rt],AluCtrl);
+                int asd=AluSrc==1?(instr16):regs[rt];
+                rez=ALU(regs[rs],asd,AluCtrl);
 
                 if(MemRead)
                     MemOut=mem[rez];
@@ -335,9 +371,41 @@ int main()
                 rez=MuxMemOut;
 
             }
-            printf("!!%u\n",rez);
+            printf("\tIesire Mux DM %u\n\n\n\n",rez);
+            write(p_EX_PC[1],&ret,sizeof(unsigned long int));
 
         }
+        return 0;
+    }
+
+    if(fork()==0)
+    {
+        int ind=0;
+        float wait_time=1;
+        close(p_clk[0][0]);
+        close(p_clk[1][0]);
+        close(p_clk[2][0]);
+        close(p_clk[3][0]);
+        while(1)
+        {
+            int rand=1;
+            printf("--------------\nBlock PC Ciclul %d:\n",ind);
+            write(p_clk[ind++%4][1],&rand,sizeof(int));
+            sleep(wait_time);
+            printf("Block IM Ciclul %d:\n",ind);
+            write(p_clk[ind++%4][1],&rand,sizeof(int));
+            sleep(wait_time);
+            printf("Block DEC Ciclul %d:\n",ind);
+            write(p_clk[ind++%4][1],&rand,sizeof(int));
+            sleep(wait_time);
+            printf("Block EX Ciclul %d:\n",ind);
+            write(p_clk[ind++%4][1],&rand,sizeof(int));
+            sleep(wait_time);
+        }
+        close(p_clk[0][1]);
+        close(p_clk[1][1]);
+        close(p_clk[2][1]);
+        close(p_clk[3][1]);
         return 0;
     }
     else
